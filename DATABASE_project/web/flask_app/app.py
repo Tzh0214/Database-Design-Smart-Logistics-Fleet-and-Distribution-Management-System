@@ -70,7 +70,65 @@ def drivers():
             """
         ).fetchall()
         fleets = conn.execute("SELECT FleetId, Name FROM dbo.Fleets ORDER BY Name").fetchall()
-    return render_template("drivers.html", drivers=drivers, fleets=fleets)
+    return render_template("drivers.html", drivers=drivers, fleets=fleets, edit_driver=None)
+
+
+@app.route("/drivers/edit/<int:driver_id>", methods=["GET", "POST"])
+def edit_driver(driver_id: int):
+    if request.method == "POST":
+        employee_no = request.form.get("employee_no")
+        name = request.form.get("name")
+        license_level = request.form.get("license_level")
+        phone = request.form.get("phone")
+        fleet_id = request.form.get("fleet_id")
+        # Basic validation
+        if not all([employee_no, name, license_level, fleet_id]):
+            flash("必填项不能为空", "error")
+        elif license_level not in ["C1", "C2", "B1", "B2", "A1", "A2"]:
+            flash("驾照等级不合法（允许：C1/C2/B1/B2/A1/A2）", "error")
+        else:
+            try:
+                with get_conn() as conn:
+                    conn.execute(
+                        """
+                        UPDATE dbo.Drivers
+                        SET EmployeeNo = ?, Name = ?, LicenseLevel = ?, Phone = ?, FleetId = ?
+                        WHERE DriverId = ?
+                        """,
+                        (employee_no, name, license_level, phone, int(fleet_id), driver_id),
+                    )
+                    conn.commit()
+                    flash("司机信息已更新", "success")
+                    return redirect(url_for("drivers"))
+            except pyodbc.Error as e:
+                flash(f"数据库错误：{e}", "error")
+
+    # GET or failed POST: reload data with edit target
+    with get_conn() as conn:
+        edit_driver = conn.execute(
+            """
+            SELECT d.DriverId, d.EmployeeNo, d.Name, d.LicenseLevel, d.Phone,
+                   d.FleetId, f.Name AS FleetName
+            FROM dbo.Drivers d
+            JOIN dbo.Fleets f ON f.FleetId = d.FleetId
+            WHERE d.DriverId = ?
+            """,
+            (driver_id,),
+        ).fetchone()
+        drivers = conn.execute(
+            """
+            SELECT d.DriverId, d.EmployeeNo, d.Name, d.LicenseLevel, d.Phone,
+                   d.FleetId, f.Name AS FleetName
+            FROM dbo.Drivers d
+            JOIN dbo.Fleets f ON f.FleetId = d.FleetId
+            ORDER BY d.DriverId DESC
+            """
+        ).fetchall()
+        fleets = conn.execute("SELECT FleetId, Name FROM dbo.Fleets ORDER BY Name").fetchall()
+    if not edit_driver:
+        flash("未找到该司机", "error")
+        return redirect(url_for("drivers"))
+    return render_template("drivers.html", drivers=drivers, fleets=fleets, edit_driver=edit_driver)
 
 
 # Vehicles CRUD (create minimal)
@@ -80,23 +138,20 @@ def vehicles():
         plate_no = request.form.get("plate_no")
         max_weight = request.form.get("max_weight")
         max_volume = request.form.get("max_volume")
-        status = request.form.get("status")
         fleet_id = request.form.get("fleet_id")
         # Basic validation: plate regex simple
         import re
         plate_regex = r"^[A-Z]{1}[A-Z0-9]{5}$"  # 简化示例：如粤A12345，实际可更严格
-        if not all([plate_no, max_weight, max_volume, status, fleet_id]):
+        if not all([plate_no, max_weight, max_volume, fleet_id]):
             flash("必填项不能为空", "error")
         elif not re.match(plate_regex, plate_no.upper()):
             flash("车牌格式不合法（示例：A12345）", "error")
-        elif status not in ["空闲", "运输中", "维修中", "异常"]:
-            flash("车辆状态不合法", "error")
         else:
             try:
                 with get_conn() as conn:
                     conn.execute(
-                        "INSERT INTO dbo.Vehicles(FleetId, PlateNo, MaxWeight, MaxVolume, Status) VALUES (?, ?, ?, ?, ?)",
-                        (int(fleet_id), plate_no, float(max_weight), float(max_volume), status)
+                        "INSERT INTO dbo.Vehicles(FleetId, PlateNo, MaxWeight, MaxVolume, Status) VALUES (?, ?, ?, ?, N'空闲')",
+                        (int(fleet_id), plate_no, float(max_weight), float(max_volume))
                     )
                     conn.commit()
                     flash("车辆已创建", "success")
@@ -126,7 +181,76 @@ def vehicles():
             params,
         ).fetchall()
         fleets = conn.execute("SELECT FleetId, Name FROM dbo.Fleets ORDER BY Name").fetchall()
-    return render_template("vehicles.html", vehicles=vehicles, fleets=fleets, selected_fleet_id=selected_fleet_id)
+    return render_template("vehicles.html", vehicles=vehicles, fleets=fleets, selected_fleet_id=selected_fleet_id, edit_vehicle=None)
+
+
+@app.route("/vehicles/edit/<int:vehicle_id>", methods=["GET", "POST"])
+def edit_vehicle(vehicle_id: int):
+    if request.method == "POST":
+        plate_no = request.form.get("plate_no")
+        max_weight = request.form.get("max_weight")
+        max_volume = request.form.get("max_volume")
+        fleet_id = request.form.get("fleet_id")
+        import re
+        plate_regex = r"^[A-Z]{1}[A-Z0-9]{5}$"
+        if not all([plate_no, max_weight, max_volume, fleet_id]):
+            flash("必填项不能为空", "error")
+        elif not re.match(plate_regex, plate_no.upper()):
+            flash("车牌格式不合法（示例：A12345）", "error")
+        else:
+            try:
+                with get_conn() as conn:
+                    conn.execute(
+                        """
+                        UPDATE dbo.Vehicles
+                        SET PlateNo = ?, MaxWeight = ?, MaxVolume = ?, FleetId = ?
+                        WHERE VehicleId = ?
+                        """,
+                        (plate_no, float(max_weight), float(max_volume), int(fleet_id), vehicle_id),
+                    )
+                    conn.commit()
+                    flash("车辆信息已更新", "success")
+                    return redirect(url_for("vehicles"))
+            except pyodbc.Error as e:
+                flash(f"数据库错误：{e}", "error")
+            except (TypeError, ValueError):
+                flash("输入格式无效", "error")
+
+    selected_fleet_id = request.args.get("fleet_id")
+    where_clause = ""
+    params = []
+    if selected_fleet_id:
+        try:
+            params.append(int(selected_fleet_id))
+            where_clause = "WHERE v.FleetId = ?"
+        except ValueError:
+            flash("车队筛选参数无效", "error")
+
+    with get_conn() as conn:
+        edit_vehicle = conn.execute(
+            """
+            SELECT v.VehicleId, v.PlateNo, v.MaxWeight, v.MaxVolume, v.Status, v.FleetId, f.Name AS FleetName
+            FROM dbo.Vehicles v
+            JOIN dbo.Fleets f ON f.FleetId = v.FleetId
+            WHERE v.VehicleId = ?
+            """,
+            (vehicle_id,),
+        ).fetchone()
+        vehicles = conn.execute(
+            f"""
+            SELECT v.VehicleId, v.PlateNo, v.MaxWeight, v.MaxVolume, v.Status, v.FleetId, f.Name AS FleetName
+            FROM dbo.Vehicles v
+            JOIN dbo.Fleets f ON f.FleetId = v.FleetId
+            {where_clause}
+            ORDER BY v.VehicleId DESC
+            """,
+            params,
+        ).fetchall()
+        fleets = conn.execute("SELECT FleetId, Name FROM dbo.Fleets ORDER BY Name").fetchall()
+    if not edit_vehicle:
+        flash("未找到该车辆", "error")
+        return redirect(url_for("vehicles"))
+    return render_template("vehicles.html", vehicles=vehicles, fleets=fleets, selected_fleet_id=selected_fleet_id, edit_vehicle=edit_vehicle)
 
 
 # Assign order to vehicle

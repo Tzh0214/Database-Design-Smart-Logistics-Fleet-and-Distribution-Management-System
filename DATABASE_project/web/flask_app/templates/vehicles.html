@@ -11,12 +11,6 @@
   <label>容积上限(m³):</label>
   <input name="max_volume" type="number" step="0.01" required placeholder="如: 20">
   
-  <label>状态:</label>
-  <select name="status" required>
-    <option value="">请选择</option>
-    <option>空闲</option><option>运输中</option><option>维修中</option><option>异常</option>
-  </select>
-  
   <label>所属车队:</label>
   <select name="fleet_id" required>
     <option value="">请选择</option>
@@ -27,6 +21,30 @@
   
   <button type="submit">💾 保存</button>
 </form>
+
+  {% if edit_vehicle %}
+  <h3>✏️ 车辆信息编辑</h3>
+  <form method="post" action="/vehicles/edit/{{ edit_vehicle.VehicleId }}">
+    <label>车牌:</label>
+    <input name="plate_no" required value="{{ edit_vehicle.PlateNo }}">
+
+    <label>载重上限(kg):</label>
+    <input name="max_weight" type="number" step="0.01" required value="{{ edit_vehicle.MaxWeight }}">
+
+    <label>容积上限(m³):</label>
+    <input name="max_volume" type="number" step="0.01" required value="{{ edit_vehicle.MaxVolume }}">
+
+    <label>所属车队:</label>
+    <select name="fleet_id" required>
+      {% for f in fleets %}
+        <option value="{{ f.FleetId }}" {% if edit_vehicle.FleetId == f.FleetId %}selected{% endif %}>{{ f.Name }}</option>
+      {% endfor %}
+    </select>
+
+    <button type="submit">💾 更新</button>
+    <a href="/vehicles" style="margin-left:10px;">取消</a>
+  </form>
+  {% endif %}
 
 <h3>🚛 车辆列表</h3>
 <form method="get" style="margin-bottom: 16px; background: white; padding: 12px; border-radius: 6px;">
@@ -42,7 +60,7 @@
 {% if vehicles %}
 <table>
   <thead>
-    <tr><th>ID</th><th>车牌</th><th>载重上限</th><th>容积上限</th><th>状态</th><th>所属车队</th></tr>
+    <tr><th>ID</th><th>车牌</th><th>载重上限</th><th>容积上限</th><th>状态</th><th>所属车队</th><th>操作</th></tr>
   </thead>
   <tbody>
   {% for v in vehicles %}
@@ -53,6 +71,7 @@
       <td>{{ v.MaxVolume }} m³</td>
       <td>{{ v.Status }}</td>
       <td>{{ v.FleetName }}</td>
+      <td><a href="/vehicles/edit/{{ v.VehicleId }}">编辑</a></td>
     </tr>
   {% endfor %}
   </tbody>

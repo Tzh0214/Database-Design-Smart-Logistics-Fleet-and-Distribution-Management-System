@@ -28,11 +28,44 @@
   <button type="submit">💾 保存</button>
 </form>
 
+{% if edit_driver %}
+<h3>✏️ 司机信息编辑</h3>
+<form method="post" action="/drivers/edit/{{ edit_driver.DriverId }}">
+  <label>工号:</label>
+  <input name="employee_no" required value="{{ edit_driver.EmployeeNo }}">
+
+  <label>姓名:</label>
+  <input name="name" required value="{{ edit_driver.Name }}">
+
+  <label>驾照等级:</label>
+  <select name="license_level" required>
+    <option value="">请选择</option>
+    {% for lvl in ['C1','C2','B1','B2','A1','A2'] %}
+      <option value="{{ lvl }}" {% if edit_driver.LicenseLevel == lvl %}selected{% endif %}>{{ lvl }}</option>
+    {% endfor %}
+  </select>
+
+  <label>联系方式:</label>
+  <input name="phone" value="{{ edit_driver.Phone }}">
+
+  <label>所属车队:</label>
+  <select name="fleet_id" required>
+    <option value="">请选择</option>
+    {% for f in fleets %}
+      <option value="{{ f.FleetId }}" {% if edit_driver.FleetId == f.FleetId %}selected{% endif %}>{{ f.Name }}</option>
+    {% endfor %}
+  </select>
+
+  <button type="submit">💾 更新</button>
+  <a href="/drivers" style="margin-left:10px;">取消</a>
+</form>
+{% endif %}
+
 <h3>👥 司机列表</h3>
 {% if drivers %}
 <table>
   <thead>
-    <tr><th>ID</th><th>工号</th><th>姓名</th><th>驾照等级</th><th>电话</th><th>所属车队</th></tr>
+    <tr><th>ID</th><th>工号</th><th>姓名</th><th>驾照等级</th><th>电话</th><th>所属车队</th><th>操作</th></tr>
   </thead>
   <tbody>
   {% for d in drivers %}
@@ -43,6 +76,7 @@
       <td>{{ d.LicenseLevel }}</td>
       <td>{{ d.Phone or '-' }}</td>
       <td>{{ d.FleetName }}</td>
+      <td><a href="/drivers/edit/{{ d.DriverId }}">编辑</a></td>
     </tr>
   {% endfor %}
   </tbody>
