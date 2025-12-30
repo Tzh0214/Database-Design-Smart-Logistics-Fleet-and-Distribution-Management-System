@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3>异常处理</h3>
+<p>将异常标记为已处理后，触发器会自动根据车辆当前订单状态恢复车辆状态（运输中 或 空闲）。</p>
+
+{% if exceptions %}
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr>
+    <th>异常ID</th><th>发生时间</th><th>类型</th><th>阶段</th><th>罚款</th>
+    <th>车辆</th><th>车辆状态</th><th>司机</th><th>操作</th>
+  </tr>
+  {% for ex in exceptions %}
+    <tr>
+      <td>{{ ex.ExceptionId }}</td>
+      <td>{{ ex.OccurTime }}</td>
+      <td>{{ ex.ExceptionType }}</td>
+      <td>{{ ex.Phase }}</td>
+      <td>{{ ex.FineAmount }}</td>
+      <td>{{ ex.PlateNo }}</td>
+      <td>{{ ex.VehicleStatus }}</td>
+      <td>{{ ex.DriverName or '(无)' }}</td>
+      <td>
+        <form method="post" style="display:inline;">
+          <input type="hidden" name="exception_id" value="{{ ex.ExceptionId }}">
+          <button type="submit">标记已处理</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>暂无未处理异常。</p>
+{% endif %}
+{% endblock %}

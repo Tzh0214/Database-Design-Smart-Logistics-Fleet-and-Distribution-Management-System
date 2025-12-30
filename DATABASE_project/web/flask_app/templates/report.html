@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3>车队月度报表</h3>
+<form>
+  车队: <select name="fleet_id" required>
+    {% for f in fleets %}
+      <option value="{{ f.FleetId }}" {% if request.args.get('fleet_id')==f.FleetId|string %}selected{% endif %}>{{ f.Name }}</option>
+    {% endfor %}
+  </select>
+  年: <input name="year" value="{{ request.args.get('year', '') }}" required>
+  月: <input name="month" value="{{ request.args.get('month', '') }}" required>
+  <button type="submit">查询</button>
+</form>
+
+{% if result %}
+  <h4>结果</h4>
+  <ul>
+    <li>总运单数: {{ result.TotalOrders }}</li>
+    <li>已完成数: {{ result.CompletedOrders }}</li>
+    <li>进行中: {{ result.ActiveOrders }}</li>
+    <li>异常总数: {{ result.TotalExceptions }}</li>
+    <li>累计罚款: {{ result.TotalFineAmount }}</li>
+  </ul>
+{% endif %}
+{% endblock %}
