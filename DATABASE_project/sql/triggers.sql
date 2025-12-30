@@ -39,15 +39,16 @@ BEGIN
     SELECT VehicleId, DriverId, Weight, Volume, Destination, ISNULL(OrderDate, SYSDATETIME()), ISNULL(Status, N'新建')
     FROM inserted;
 
-    -- Set vehicle status to "运输中" when it has active orders
-    UPDATE v
-    SET v.Status = N'运输中'
-    FROM dbo.Vehicles v
-    WHERE EXISTS (
-        SELECT 1 FROM dbo.Orders o
-        WHERE o.VehicleId = v.VehicleId
-          AND o.Status IN (N'新建', N'装货中', N'运输中')
-    );
+        -- Set vehicle status to "装货中" when it has active orders (unless already 运输中)
+        UPDATE v
+        SET v.Status = N'装货中'
+        FROM dbo.Vehicles v
+        WHERE v.Status <> N'运输中'
+            AND EXISTS (
+                SELECT 1 FROM dbo.Orders o
+                WHERE o.VehicleId = v.VehicleId
+                    AND o.Status IN (N'新建', N'装货中', N'运输中')
+        );
 END
 GO
 
@@ -58,18 +59,19 @@ AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
-    -- When orders become active, set vehicle to "运输中"
+    -- When orders become/remain active and vehicle not departed, set to "装货中"
     IF EXISTS (
         SELECT 1 FROM inserted i
         WHERE i.Status IN (N'新建', N'装货中', N'运输中')
     )
     BEGIN
         UPDATE v
-        SET v.Status = N'运输中'
+        SET v.Status = N'装货中'
         FROM dbo.Vehicles v
-        WHERE EXISTS (
-            SELECT 1 FROM inserted i WHERE i.VehicleId = v.VehicleId
-        );
+        WHERE v.Status <> N'运输中'
+          AND EXISTS (
+              SELECT 1 FROM inserted i WHERE i.VehicleId = v.VehicleId
+          );
     END
 
     -- When orders complete, if no active orders remain, set vehicle to "空闲"

@@ -47,7 +47,7 @@ CREATE TABLE dbo.Vehicles (
     MaxVolume DECIMAL(12,2) NOT NULL,
     Status NVARCHAR(20) NOT NULL DEFAULT N'空闲',
     CreatedAt DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
-    CONSTRAINT CK_Vehicles_Status CHECK (Status IN (N'空闲', N'运输中', N'维修中', N'异常')),
+    CONSTRAINT CK_Vehicles_Status CHECK (Status IN (N'空闲', N'装货中', N'运输中', N'维修中', N'异常')),
     CONSTRAINT FK_Vehicles_Fleets FOREIGN KEY (FleetId)
         REFERENCES dbo.Fleets(FleetId) ON DELETE NO ACTION ON UPDATE NO ACTION
 );

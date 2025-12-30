@@ -74,7 +74,7 @@ CREATE TABLE dbo.Vehicles (
     MaxVolume DECIMAL(12,2) NOT NULL,
     Status NVARCHAR(20) NOT NULL DEFAULT N'空闲',
     CreatedAt DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
-    CONSTRAINT CK_Vehicles_Status CHECK (Status IN (N'空闲', N'运输中', N'维修中', N'异常')),
+    CONSTRAINT CK_Vehicles_Status CHECK (Status IN (N'空闲', N'装货中', N'运输中', N'维修中', N'异常')),
     CONSTRAINT FK_Vehicles_Fleets FOREIGN KEY (FleetId)
         REFERENCES dbo.Fleets(FleetId) ON DELETE NO ACTION ON UPDATE NO ACTION
 );
@@ -143,6 +143,9 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Vehicles_PlateNo' AND 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Orders_OrderDate' AND object_id = OBJECT_ID('dbo.Orders'))
     CREATE INDEX IX_Orders_OrderDate ON dbo.Orders(OrderDate);
 
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Orders_Vehicle_Status' AND object_id = OBJECT_ID('dbo.Orders'))
+    CREATE INDEX IX_Orders_Vehicle_Status ON dbo.Orders(VehicleId, Status);
+
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Drivers_EmployeeNo' AND object_id = OBJECT_ID('dbo.Drivers'))
     CREATE INDEX IX_Drivers_EmployeeNo ON dbo.Drivers(EmployeeNo);
 
@@ -188,22 +191,23 @@ BEGIN
         RETURN;
     END
 
-    INSERT INTO dbo.Orders (VehicleId, DriverId, Weight, Volume, Destination, OrderDate, Status)
-    SELECT VehicleId, DriverId, Weight, Volume, Destination, ISNULL(OrderDate, SYSDATETIME()), ISNULL(Status, N'新建')
-    FROM inserted;
+        INSERT INTO dbo.Orders (VehicleId, DriverId, Weight, Volume, Destination, OrderDate, Status)
+        SELECT VehicleId, DriverId, Weight, Volume, Destination, ISNULL(OrderDate, SYSDATETIME()), ISNULL(Status, N'新建')
+        FROM inserted;
 
-    UPDATE v
-    SET v.Status = N'运输中'
-    FROM dbo.Vehicles v
-    WHERE EXISTS (
-        SELECT 1 FROM dbo.Orders o
-        WHERE o.VehicleId = v.VehicleId
-          AND o.Status IN (N'新建', N'装货中', N'运输中')
-    );
+        -- Set vehicle status to "装货中" when it has active orders (unless already 运输中)
+        UPDATE v
+        SET v.Status = N'装货中'
+        FROM dbo.Vehicles v
+        WHERE v.Status <> N'运输中'
+            AND EXISTS (
+                SELECT 1 FROM dbo.Orders o
+                WHERE o.VehicleId = v.VehicleId
+                    AND o.Status IN (N'新建', N'装货中', N'运输中')
+        );
 END
 GO
 
--- Trigger: Order status change
 CREATE OR ALTER TRIGGER dbo.TR_Orders_AfterUpdate_Status
 ON dbo.Orders
 AFTER UPDATE
@@ -212,9 +216,11 @@ BEGIN
     SET NOCOUNT ON;
     IF EXISTS (SELECT 1 FROM inserted i WHERE i.Status IN (N'新建', N'装货中', N'运输中'))
     BEGIN
-        UPDATE v SET v.Status = N'运输中'
+        UPDATE v
+        SET v.Status = N'装货中'
         FROM dbo.Vehicles v
-        WHERE EXISTS (SELECT 1 FROM inserted i WHERE i.VehicleId = v.VehicleId);
+        WHERE v.Status <> N'运输中'
+          AND EXISTS (SELECT 1 FROM inserted i WHERE i.VehicleId = v.VehicleId);
     END
 
     IF EXISTS (SELECT 1 FROM inserted i WHERE i.Status = N'已完成')

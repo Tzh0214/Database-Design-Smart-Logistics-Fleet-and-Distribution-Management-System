@@ -60,7 +60,7 @@
 {% if vehicles %}
 <table>
   <thead>
-    <tr><th>ID</th><th>车牌</th><th>载重上限</th><th>容积上限</th><th>状态</th><th>所属车队</th><th>操作</th></tr>
+    <tr><th>ID</th><th>车牌</th><th>载重上限</th><th>容积上限</th><th>状态</th><th>所属车队</th><th>活跃运单</th><th>操作</th></tr>
   </thead>
   <tbody>
   {% for v in vehicles %}
@@ -71,7 +71,18 @@
       <td>{{ v.MaxVolume }} m³</td>
       <td>{{ v.Status }}</td>
       <td>{{ v.FleetName }}</td>
-      <td><a href="/vehicles/edit/{{ v.VehicleId }}">编辑</a></td>
+      <td>{{ v.ActiveOrders }}</td>
+      <td>
+        <a href="/vehicles/edit/{{ v.VehicleId }}">编辑</a>
+        {% if v.Status == '装货中' and v.ActiveOrders|int > 0 %}
+          <form method="post" action="/vehicles/depart/{{ v.VehicleId }}" style="display:inline; margin-left:6px;">
+            <button type="submit">发车</button>
+          </form>
+        {% endif %}
+        <form method="post" action="/vehicles/delete/{{ v.VehicleId }}" style="display:inline; margin-left:6px;" onsubmit="return confirm('确认删除该车辆？');">
+          <button type="submit">删除</button>
+        </form>
+      </td>
     </tr>
   {% endfor %}
   </tbody>

@@ -76,7 +76,12 @@
       <td>{{ d.LicenseLevel }}</td>
       <td>{{ d.Phone or '-' }}</td>
       <td>{{ d.FleetName }}</td>
-      <td><a href="/drivers/edit/{{ d.DriverId }}">编辑</a></td>
+      <td>
+        <a href="/drivers/edit/{{ d.DriverId }}">编辑</a>
+        <form method="post" action="/drivers/delete/{{ d.DriverId }}" style="display:inline; margin-left:6px;" onsubmit="return confirm('确认删除该司机？');">
+          <button type="submit">删除</button>
+        </form>
+      </td>
     </tr>
   {% endfor %}
   </tbody>

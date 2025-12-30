@@ -131,6 +131,18 @@ def edit_driver(driver_id: int):
     return render_template("drivers.html", drivers=drivers, fleets=fleets, edit_driver=edit_driver)
 
 
+@app.route("/drivers/delete/<int:driver_id>", methods=["POST"])
+def delete_driver(driver_id: int):
+    try:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM dbo.Drivers WHERE DriverId = ?", (driver_id,))
+            conn.commit()
+            flash("司机已删除", "success")
+    except pyodbc.Error as e:
+        flash(f"删除失败，可能存在关联数据：{e}", "error")
+    return redirect(url_for("drivers"))
+
+
 # Vehicles CRUD (create minimal)
 @app.route("/vehicles", methods=["GET", "POST"])
 def vehicles():
@@ -172,9 +184,15 @@ def vehicles():
     with get_conn() as conn:
         vehicles = conn.execute(
             f"""
-            SELECT v.VehicleId, v.PlateNo, v.MaxWeight, v.MaxVolume, v.Status, v.FleetId, f.Name AS FleetName
+            SELECT v.VehicleId, v.PlateNo, v.MaxWeight, v.MaxVolume, v.Status, v.FleetId, f.Name AS FleetName,
+                   ISNULL(o.ActiveOrders, 0) AS ActiveOrders
             FROM dbo.Vehicles v
             JOIN dbo.Fleets f ON f.FleetId = v.FleetId
+            OUTER APPLY (
+                SELECT COUNT(*) AS ActiveOrders
+                FROM dbo.Orders o
+                WHERE o.VehicleId = v.VehicleId AND o.Status IN (N'新建', N'装货中', N'运输中')
+            ) o
             {where_clause}
             ORDER BY v.VehicleId DESC
             """,
@@ -182,6 +200,55 @@ def vehicles():
         ).fetchall()
         fleets = conn.execute("SELECT FleetId, Name FROM dbo.Fleets ORDER BY Name").fetchall()
     return render_template("vehicles.html", vehicles=vehicles, fleets=fleets, selected_fleet_id=selected_fleet_id, edit_vehicle=None)
+
+
+@app.route("/vehicles/depart/<int:vehicle_id>", methods=["POST"])
+def vehicle_depart(vehicle_id: int):
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT Status FROM dbo.Vehicles WHERE VehicleId = ?",
+                (vehicle_id,)
+            ).fetchone()
+            if not row:
+                flash("车辆不存在", "error")
+                return redirect(url_for("vehicles"))
+            if row[0] == "运输中":
+                flash("车辆已在运输中", "error")
+                return redirect(url_for("vehicles"))
+
+            active_orders = conn.execute(
+                """
+                SELECT COUNT(*) FROM dbo.Orders
+                WHERE VehicleId = ? AND Status IN (N'新建', N'装货中', N'运输中')
+                """,
+                (vehicle_id,),
+            ).fetchone()[0]
+            if active_orders == 0:
+                flash("该车辆没有待运单，无法发车", "error")
+                return redirect(url_for("vehicles"))
+
+            conn.execute(
+                "UPDATE dbo.Vehicles SET Status = N'运输中' WHERE VehicleId = ?",
+                (vehicle_id,)
+            )
+            conn.commit()
+            flash("车辆已发车，状态变更为运输中", "success")
+    except pyodbc.Error as e:
+        flash(f"数据库错误：{e}", "error")
+    return redirect(url_for("vehicles"))
+
+
+@app.route("/vehicles/delete/<int:vehicle_id>", methods=["POST"])
+def delete_vehicle(vehicle_id: int):
+    try:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM dbo.Vehicles WHERE VehicleId = ?", (vehicle_id,))
+            conn.commit()
+            flash("车辆已删除", "success")
+    except pyodbc.Error as e:
+        flash(f"删除失败，可能存在关联数据：{e}", "error")
+    return redirect(url_for("vehicles"))
 
 
 @app.route("/vehicles/edit/<int:vehicle_id>", methods=["GET", "POST"])
@@ -229,18 +296,30 @@ def edit_vehicle(vehicle_id: int):
     with get_conn() as conn:
         edit_vehicle = conn.execute(
             """
-            SELECT v.VehicleId, v.PlateNo, v.MaxWeight, v.MaxVolume, v.Status, v.FleetId, f.Name AS FleetName
+            SELECT v.VehicleId, v.PlateNo, v.MaxWeight, v.MaxVolume, v.Status, v.FleetId, f.Name AS FleetName,
+                   ISNULL(o.ActiveOrders, 0) AS ActiveOrders
             FROM dbo.Vehicles v
             JOIN dbo.Fleets f ON f.FleetId = v.FleetId
+            OUTER APPLY (
+                SELECT COUNT(*) AS ActiveOrders
+                FROM dbo.Orders o
+                WHERE o.VehicleId = v.VehicleId AND o.Status IN (N'新建', N'装货中', N'运输中')
+            ) o
             WHERE v.VehicleId = ?
             """,
             (vehicle_id,),
         ).fetchone()
         vehicles = conn.execute(
             f"""
-            SELECT v.VehicleId, v.PlateNo, v.MaxWeight, v.MaxVolume, v.Status, v.FleetId, f.Name AS FleetName
+            SELECT v.VehicleId, v.PlateNo, v.MaxWeight, v.MaxVolume, v.Status, v.FleetId, f.Name AS FleetName,
+                   ISNULL(o.ActiveOrders, 0) AS ActiveOrders
             FROM dbo.Vehicles v
             JOIN dbo.Fleets f ON f.FleetId = v.FleetId
+            OUTER APPLY (
+                SELECT COUNT(*) AS ActiveOrders
+                FROM dbo.Orders o
+                WHERE o.VehicleId = v.VehicleId AND o.Status IN (N'新建', N'装货中', N'运输中')
+            ) o
             {where_clause}
             ORDER BY v.VehicleId DESC
             """,
@@ -269,6 +348,18 @@ def assign_order():
         try:
             driver_id_int = int(driver_id)
             with get_conn() as conn:
+                # Block assigning when vehicle already departed (运输中)
+                status_row = conn.execute(
+                    "SELECT Status FROM dbo.Vehicles WHERE VehicleId = ?",
+                    (int(vehicle_id),)
+                ).fetchone()
+                if not status_row:
+                    flash("车辆不存在", "error")
+                    return redirect(url_for("assign_order"))
+                if status_row[0] == "运输中":
+                    flash("车辆已发车，无法再添加运单", "error")
+                    return redirect(url_for("assign_order"))
+
                 conn.execute(
                     "INSERT INTO dbo.Orders(VehicleId, DriverId, Weight, Volume, Destination, Status) VALUES (?, ?, ?, ?, ?, N'新建')",
                     (int(vehicle_id), driver_id_int, float(weight), float(volume), destination)
@@ -288,7 +379,7 @@ def assign_order():
     with get_conn() as conn:
         # Only show idle vehicles with remaining capacity > 0
         vehicles = conn.execute(
-            "SELECT VehicleId, PlateNo, Status, RemainingWeight FROM dbo.vw_fleet_vehicle_load WHERE Status = N'空闲' AND RemainingWeight > 0 ORDER BY PlateNo"
+            "SELECT VehicleId, PlateNo, Status, RemainingWeight FROM dbo.vw_fleet_vehicle_load WHERE Status IN (N'空闲', N'装货中') AND RemainingWeight > 0 ORDER BY PlateNo"
         ).fetchall()
         drivers = conn.execute("SELECT DriverId, Name FROM dbo.Drivers ORDER BY Name").fetchall()
     return render_template("assign_order.html", vehicles=vehicles, drivers=drivers)
