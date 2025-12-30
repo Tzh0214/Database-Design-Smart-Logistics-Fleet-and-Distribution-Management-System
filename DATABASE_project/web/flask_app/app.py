@@ -136,6 +136,46 @@ def assign_order():
     return render_template("assign_order.html", vehicles=vehicles, drivers=drivers)
 
 
+# Sign (complete) an order
+@app.route("/orders/sign", methods=["GET", "POST"])
+def sign_order():
+    if request.method == "POST":
+        order_id = request.form.get("order_id")
+        try:
+            with get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT Status FROM dbo.Orders WHERE OrderId = ?", (int(order_id),))
+                row = cursor.fetchone()
+                if not row:
+                    flash("未找到该运单", "error")
+                elif row[0] not in ["新建", "装货中", "运输中"]:
+                    flash("仅可签收状态为 新建/装货中/运输中的运单", "error")
+                else:
+                    cursor.execute(
+                        "UPDATE dbo.Orders SET Status = N'已完成' WHERE OrderId = ?",
+                        (int(order_id),)
+                    )
+                    conn.commit()
+                    flash("运单已签收，车辆状态将自动更新", "success")
+        except pyodbc.Error as e:
+            flash(f"数据库错误：{e}", "error")
+        return redirect(url_for("sign_order"))
+
+    with get_conn() as conn:
+        orders = conn.execute(
+            """
+            SELECT o.OrderId, o.Status, o.Weight, o.Volume, o.Destination, o.OrderDate,
+                   v.PlateNo, d.Name AS DriverName
+            FROM dbo.Orders o
+            JOIN dbo.Vehicles v ON v.VehicleId = o.VehicleId
+            LEFT JOIN dbo.Drivers d ON d.DriverId = o.DriverId
+            WHERE o.Status IN (N'新建', N'装货中', N'运输中')
+            ORDER BY o.OrderDate DESC
+            """
+        ).fetchall()
+    return render_template("sign_order.html", orders=orders)
+
+
 # Record exception
 @app.route("/exceptions", methods=["GET", "POST"])
 def exceptions():

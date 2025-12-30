@@ -1,0 +1,9 @@
+# IDE / tooling artifacts
+.vs/
+**/.vs/
+*.suo
+*.ssms_suo
+*.slnx.sqlite
+
+# Optional: keep VSCode config out of git
+.vscode/

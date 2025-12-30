@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3>运单签收</h3>
+<p>仅显示状态为“新建/装货中/运输中”的运单，可在此直接签收并完成。</p>
+{% if orders %}
+<table>
+  <thead>
+    <tr>
+      <th>运单ID</th>
+      <th>车辆</th>
+      <th>司机</th>
+      <th>目的地</th>
+      <th>重量(kg)</th>
+      <th>体积(m³)</th>
+      <th>下单时间</th>
+      <th>状态</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for o in orders %}
+    <tr>
+      <td>{{ o.OrderId }}</td>
+      <td>{{ o.PlateNo }}</td>
+      <td>{{ o.DriverName or '未指定' }}</td>
+      <td>{{ o.Destination }}</td>
+      <td>{{ o.Weight }}</td>
+      <td>{{ o.Volume }}</td>
+      <td>{{ o.OrderDate }}</td>
+      <td>{{ o.Status }}</td>
+      <td>
+        <form method="post" style="display:inline">
+          <input type="hidden" name="order_id" value="{{ o.OrderId }}">
+          <button type="submit">签收</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>当前没有待签收的运单。</p>
+{% endif %}
+{% endblock %}
