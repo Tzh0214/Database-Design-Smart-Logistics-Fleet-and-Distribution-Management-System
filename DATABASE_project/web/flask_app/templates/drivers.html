@@ -32,7 +32,7 @@
 {% if drivers %}
 <table>
   <thead>
-    <tr><th>ID</th><th>工号</th><th>姓名</th><th>驾照等级</th><th>电话</th><th>车队ID</th></tr>
+    <tr><th>ID</th><th>工号</th><th>姓名</th><th>驾照等级</th><th>电话</th><th>所属车队</th></tr>
   </thead>
   <tbody>
   {% for d in drivers %}
@@ -42,7 +42,7 @@
       <td>{{ d.Name }}</td>
       <td>{{ d.LicenseLevel }}</td>
       <td>{{ d.Phone or '-' }}</td>
-      <td>{{ d.FleetId }}</td>
+      <td>{{ d.FleetName }}</td>
     </tr>
   {% endfor %}
   </tbody>

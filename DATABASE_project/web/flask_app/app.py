@@ -60,7 +60,15 @@ def drivers():
 
     # GET: fetch drivers and fleets for dropdown
     with get_conn() as conn:
-        drivers = conn.execute("SELECT DriverId, EmployeeNo, Name, LicenseLevel, Phone, FleetId FROM dbo.Drivers ORDER BY DriverId DESC").fetchall()
+        drivers = conn.execute(
+            """
+            SELECT d.DriverId, d.EmployeeNo, d.Name, d.LicenseLevel, d.Phone,
+                   d.FleetId, f.Name AS FleetName
+            FROM dbo.Drivers d
+            JOIN dbo.Fleets f ON f.FleetId = d.FleetId
+            ORDER BY d.DriverId DESC
+            """
+        ).fetchall()
         fleets = conn.execute("SELECT FleetId, Name FROM dbo.Fleets ORDER BY Name").fetchall()
     return render_template("drivers.html", drivers=drivers, fleets=fleets)
 
@@ -96,10 +104,29 @@ def vehicles():
                 flash(f"数据库错误：{e}", "error")
         return redirect(url_for("vehicles"))
 
+    selected_fleet_id = request.args.get("fleet_id")
+    where_clause = ""
+    params = []
+    if selected_fleet_id:
+        try:
+            params.append(int(selected_fleet_id))
+            where_clause = "WHERE v.FleetId = ?"
+        except ValueError:
+            flash("车队筛选参数无效", "error")
+
     with get_conn() as conn:
-        vehicles = conn.execute("SELECT VehicleId, PlateNo, MaxWeight, MaxVolume, Status, FleetId FROM dbo.Vehicles ORDER BY VehicleId DESC").fetchall()
+        vehicles = conn.execute(
+            f"""
+            SELECT v.VehicleId, v.PlateNo, v.MaxWeight, v.MaxVolume, v.Status, v.FleetId, f.Name AS FleetName
+            FROM dbo.Vehicles v
+            JOIN dbo.Fleets f ON f.FleetId = v.FleetId
+            {where_clause}
+            ORDER BY v.VehicleId DESC
+            """,
+            params,
+        ).fetchall()
         fleets = conn.execute("SELECT FleetId, Name FROM dbo.Fleets ORDER BY Name").fetchall()
-    return render_template("vehicles.html", vehicles=vehicles, fleets=fleets)
+    return render_template("vehicles.html", vehicles=vehicles, fleets=fleets, selected_fleet_id=selected_fleet_id)
 
 
 # Assign order to vehicle
@@ -111,11 +138,16 @@ def assign_order():
         weight = request.form.get("weight")
         volume = request.form.get("volume")
         destination = request.form.get("destination")
+        # Require driver selection
+        if not driver_id:
+            flash("必须选择司机", "error")
+            return redirect(url_for("assign_order"))
         try:
+            driver_id_int = int(driver_id)
             with get_conn() as conn:
                 conn.execute(
                     "INSERT INTO dbo.Orders(VehicleId, DriverId, Weight, Volume, Destination, Status) VALUES (?, ?, ?, ?, ?, N'新建')",
-                    (int(vehicle_id), int(driver_id) if driver_id else None, float(weight), float(volume), destination)
+                    (int(vehicle_id), driver_id_int, float(weight), float(volume), destination)
                 )
                 conn.commit()
                 flash("运单已分配", "success")
@@ -125,6 +157,8 @@ def assign_order():
                 flash("超出最大载重：分配失败", "error")
             else:
                 flash(f"数据库错误：{e}", "error")
+        except (TypeError, ValueError):
+            flash("司机选择无效", "error")
         return redirect(url_for("assign_order"))
 
     with get_conn() as conn:

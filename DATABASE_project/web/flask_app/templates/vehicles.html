@@ -29,10 +29,20 @@
 </form>
 
 <h3>🚛 车辆列表</h3>
+<form method="get" style="margin-bottom: 16px; background: white; padding: 12px; border-radius: 6px;">
+  <label>按车队筛选:</label>
+  <select name="fleet_id" onchange="this.form.submit()">
+    <option value="">全部车队</option>
+    {% for f in fleets %}
+      <option value="{{ f.FleetId }}" {% if selected_fleet_id and selected_fleet_id|int == f.FleetId %}selected{% endif %}>{{ f.Name }}</option>
+    {% endfor %}
+  </select>
+  <noscript><button type="submit">筛选</button></noscript>
+</form>
 {% if vehicles %}
 <table>
   <thead>
-    <tr><th>ID</th><th>车牌</th><th>载重上限</th><th>容积上限</th><th>状态</th><th>车队ID</th></tr>
+    <tr><th>ID</th><th>车牌</th><th>载重上限</th><th>容积上限</th><th>状态</th><th>所属车队</th></tr>
   </thead>
   <tbody>
   {% for v in vehicles %}
@@ -42,7 +52,7 @@
       <td>{{ v.MaxWeight }} kg</td>
       <td>{{ v.MaxVolume }} m³</td>
       <td>{{ v.Status }}</td>
-      <td>{{ v.FleetId }}</td>
+      <td>{{ v.FleetName }}</td>
     </tr>
   {% endfor %}
   </tbody>

@@ -7,8 +7,7 @@
       <option value="{{ v.VehicleId }}">{{ v.PlateNo }}（剩余载重: {{ v.RemainingWeight }}）</option>
     {% endfor %}
   </select>
-  司机(可选): <select name="driver_id">
-    <option value="">(未指定)</option>
+  司机: <select name="driver_id" required>
     {% for d in drivers %}
       <option value="{{ d.DriverId }}">{{ d.Name }}</option>
     {% endfor %}
