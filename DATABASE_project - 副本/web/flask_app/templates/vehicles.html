@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3>🚗 车辆录入</h3>
+<form method="post">
+  <label>车牌:</label>
+  <input name="plate_no" required placeholder="如: A12345">
+  
+  <label>载重上限(kg):</label>
+  <input name="max_weight" type="number" step="0.01" required placeholder="如: 5000">
+  
+  <label>容积上限(m³):</label>
+  <input name="max_volume" type="number" step="0.01" required placeholder="如: 20">
+  
+  <label>所属车队:</label>
+  <select name="fleet_id" required>
+    <option value="">请选择</option>
+    {% for f in fleets %}
+      <option value="{{ f.FleetId }}">{{ f.Name }}</option>
+    {% endfor %}
+  </select>
+  
+  <button type="submit">💾 保存</button>
+</form>
+
+  {% if edit_vehicle %}
+  <h3>✏️ 车辆信息编辑</h3>
+  <form method="post" action="/vehicles/edit/{{ edit_vehicle.VehicleId }}">
+    <label>车牌:</label>
+    <input name="plate_no" required value="{{ edit_vehicle.PlateNo }}">
+
+    <label>载重上限(kg):</label>
+    <input name="max_weight" type="number" step="0.01" required value="{{ edit_vehicle.MaxWeight }}">
+
+    <label>容积上限(m³):</label>
+    <input name="max_volume" type="number" step="0.01" required value="{{ edit_vehicle.MaxVolume }}">
+
+    <label>所属车队:</label>
+    <select name="fleet_id" required>
+      {% for f in fleets %}
+        <option value="{{ f.FleetId }}" {% if edit_vehicle.FleetId == f.FleetId %}selected{% endif %}>{{ f.Name }}</option>
+      {% endfor %}
+    </select>
+
+    <button type="submit">💾 更新</button>
+    <a href="/vehicles" style="margin-left:10px;">取消</a>
+  </form>
+  {% endif %}
+
+<h3>🚛 车辆列表</h3>
+<form method="get" style="margin-bottom: 16px; background: white; padding: 12px; border-radius: 6px;">
+  <label>按车队筛选:</label>
+  <select name="fleet_id" onchange="this.form.submit()">
+    <option value="">全部车队</option>
+    {% for f in fleets %}
+      <option value="{{ f.FleetId }}" {% if selected_fleet_id and selected_fleet_id|int == f.FleetId %}selected{% endif %}>{{ f.Name }}</option>
+    {% endfor %}
+  </select>
+  <noscript><button type="submit">筛选</button></noscript>
+</form>
+{% if vehicles %}
+<table>
+  <thead>
+    <tr><th>ID</th><th>车牌</th><th>载重上限</th><th>容积上限</th><th>状态</th><th>所属车队</th><th>活跃运单</th><th>操作</th></tr>
+  </thead>
+  <tbody>
+  {% for v in vehicles %}
+    <tr>
+      <td>{{ v.VehicleId }}</td>
+      <td><strong>{{ v.PlateNo }}</strong></td>
+      <td>{{ v.MaxWeight }} kg</td>
+      <td>{{ v.MaxVolume }} m³</td>
+      <td>{{ v.Status }}</td>
+      <td>{{ v.FleetName }}</td>
+      <td>{{ v.ActiveOrders }}</td>
+      <td>
+        <a href="/vehicles/edit/{{ v.VehicleId }}">编辑</a>
+        {% if v.Status == '装货中' and v.ActiveOrders|int > 0 %}
+          <form method="post" action="/vehicles/depart/{{ v.VehicleId }}" style="display:inline; margin-left:6px;">
+            <button type="submit">发车</button>
+          </form>
+        {% endif %}
+        <form method="post" action="/vehicles/delete/{{ v.VehicleId }}" style="display:inline; margin-left:6px;" onsubmit="return confirm('确认删除该车辆？');">
+          <button type="submit">删除</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p style="color: #999; text-align: center; padding: 20px;">暂无车辆数据</p>
+{% endif %}
+{% endblock %}

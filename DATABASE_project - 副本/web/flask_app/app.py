@@ -1,0 +1,515 @@
+import os
+from flask import Flask, request, render_template, redirect, url_for, flash
+import pyodbc
+from dotenv import load_dotenv
+
+app = Flask(__name__)
+app.secret_key = os.getenv("APP_SECRET", "dev-secret")
+
+# SQL Server connection
+# Load environment variables from .env if present
+load_dotenv()
+SQL_SERVER = os.getenv("SQLSERVER_SERVER", "localhost")
+SQL_DB = os.getenv("SQLSERVER_DB", "LogisticsDB")
+SQL_USER = os.getenv("SQLSERVER_USER")
+SQL_PASSWORD = os.getenv("SQLSERVER_PASSWORD")
+
+# Build connection string (SQL auth or Windows auth)
+if SQL_USER and SQL_PASSWORD:
+    CONN_STR = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={SQL_SERVER};DATABASE={SQL_DB};UID={SQL_USER};PWD={SQL_PASSWORD}"
+else:
+    # Windows Integrated Authentication
+    CONN_STR = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={SQL_SERVER};DATABASE={SQL_DB};Trusted_Connection=yes;"
+
+
+def get_conn():
+    return pyodbc.connect(CONN_STR)
+
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
+# Drivers CRUD (create minimal)
+@app.route("/drivers", methods=["GET", "POST"])
+def drivers():
+    if request.method == "POST":
+        employee_no = request.form.get("employee_no")
+        name = request.form.get("name")
+        license_level = request.form.get("license_level")
+        phone = request.form.get("phone")
+        fleet_id = request.form.get("fleet_id")
+        # Basic validation
+        if not all([employee_no, name, license_level, fleet_id]):
+            flash("必填项不能为空", "error")
+        elif license_level not in ["C1", "C2", "B1", "B2", "A1", "A2"]:
+            flash("驾照等级不合法（允许：C1/C2/B1/B2/A1/A2）", "error")
+        else:
+            try:
+                with get_conn() as conn:
+                    conn.execute(
+                        "INSERT INTO dbo.Drivers(EmployeeNo, Name, LicenseLevel, Phone, FleetId) VALUES (?, ?, ?, ?, ?)",
+                        (employee_no, name, license_level, phone, int(fleet_id))
+                    )
+                    conn.commit()
+                    flash("司机已创建", "success")
+            except pyodbc.Error as e:
+                flash(f"数据库错误：{e}", "error")
+        return redirect(url_for("drivers"))
+
+    # GET: fetch drivers and fleets for dropdown
+    with get_conn() as conn:
+        drivers = conn.execute(
+            """
+            SELECT d.DriverId, d.EmployeeNo, d.Name, d.LicenseLevel, d.Phone,
+                   d.FleetId, f.Name AS FleetName
+            FROM dbo.Drivers d
+            JOIN dbo.Fleets f ON f.FleetId = d.FleetId
+            ORDER BY d.DriverId DESC
+            """
+        ).fetchall()
+        fleets = conn.execute("SELECT FleetId, Name FROM dbo.Fleets ORDER BY Name").fetchall()
+    return render_template("drivers.html", drivers=drivers, fleets=fleets, edit_driver=None)
+
+
+@app.route("/drivers/edit/<int:driver_id>", methods=["GET", "POST"])
+def edit_driver(driver_id: int):
+    if request.method == "POST":
+        employee_no = request.form.get("employee_no")
+        name = request.form.get("name")
+        license_level = request.form.get("license_level")
+        phone = request.form.get("phone")
+        fleet_id = request.form.get("fleet_id")
+        # Basic validation
+        if not all([employee_no, name, license_level, fleet_id]):
+            flash("必填项不能为空", "error")
+        elif license_level not in ["C1", "C2", "B1", "B2", "A1", "A2"]:
+            flash("驾照等级不合法（允许：C1/C2/B1/B2/A1/A2）", "error")
+        else:
+            try:
+                with get_conn() as conn:
+                    conn.execute(
+                        """
+                        UPDATE dbo.Drivers
+                        SET EmployeeNo = ?, Name = ?, LicenseLevel = ?, Phone = ?, FleetId = ?
+                        WHERE DriverId = ?
+                        """,
+                        (employee_no, name, license_level, phone, int(fleet_id), driver_id),
+                    )
+                    conn.commit()
+                    flash("司机信息已更新", "success")
+                    return redirect(url_for("drivers"))
+            except pyodbc.Error as e:
+                flash(f"数据库错误：{e}", "error")
+
+    # GET or failed POST: reload data with edit target
+    with get_conn() as conn:
+        edit_driver = conn.execute(
+            """
+            SELECT d.DriverId, d.EmployeeNo, d.Name, d.LicenseLevel, d.Phone,
+                   d.FleetId, f.Name AS FleetName
+            FROM dbo.Drivers d
+            JOIN dbo.Fleets f ON f.FleetId = d.FleetId
+            WHERE d.DriverId = ?
+            """,
+            (driver_id,),
+        ).fetchone()
+        drivers = conn.execute(
+            """
+            SELECT d.DriverId, d.EmployeeNo, d.Name, d.LicenseLevel, d.Phone,
+                   d.FleetId, f.Name AS FleetName
+            FROM dbo.Drivers d
+            JOIN dbo.Fleets f ON f.FleetId = d.FleetId
+            ORDER BY d.DriverId DESC
+            """
+        ).fetchall()
+        fleets = conn.execute("SELECT FleetId, Name FROM dbo.Fleets ORDER BY Name").fetchall()
+    if not edit_driver:
+        flash("未找到该司机", "error")
+        return redirect(url_for("drivers"))
+    return render_template("drivers.html", drivers=drivers, fleets=fleets, edit_driver=edit_driver)
+
+
+@app.route("/drivers/delete/<int:driver_id>", methods=["POST"])
+def delete_driver(driver_id: int):
+    try:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM dbo.Drivers WHERE DriverId = ?", (driver_id,))
+            conn.commit()
+            flash("司机已删除", "success")
+    except pyodbc.Error as e:
+        flash(f"删除失败，可能存在关联数据：{e}", "error")
+    return redirect(url_for("drivers"))
+
+
+# Vehicles CRUD (create minimal)
+@app.route("/vehicles", methods=["GET", "POST"])
+def vehicles():
+    if request.method == "POST":
+        plate_no = request.form.get("plate_no")
+        max_weight = request.form.get("max_weight")
+        max_volume = request.form.get("max_volume")
+        fleet_id = request.form.get("fleet_id")
+        # Basic validation: plate regex simple
+        import re
+        plate_regex = r"^[A-Z]{1}[A-Z0-9]{5}$"  # 简化示例：如粤A12345，实际可更严格
+        if not all([plate_no, max_weight, max_volume, fleet_id]):
+            flash("必填项不能为空", "error")
+        elif not re.match(plate_regex, plate_no.upper()):
+            flash("车牌格式不合法（示例：A12345）", "error")
+        else:
+            try:
+                with get_conn() as conn:
+                    conn.execute(
+                        "INSERT INTO dbo.Vehicles(FleetId, PlateNo, MaxWeight, MaxVolume, Status) VALUES (?, ?, ?, ?, N'空闲')",
+                        (int(fleet_id), plate_no, float(max_weight), float(max_volume))
+                    )
+                    conn.commit()
+                    flash("车辆已创建", "success")
+            except pyodbc.Error as e:
+                flash(f"数据库错误：{e}", "error")
+        return redirect(url_for("vehicles"))
+
+    selected_fleet_id = request.args.get("fleet_id")
+    where_clause = ""
+    params = []
+    if selected_fleet_id:
+        try:
+            params.append(int(selected_fleet_id))
+            where_clause = "WHERE v.FleetId = ?"
+        except ValueError:
+            flash("车队筛选参数无效", "error")
+
+    with get_conn() as conn:
+        vehicles = conn.execute(
+            f"""
+            SELECT v.VehicleId, v.PlateNo, v.MaxWeight, v.MaxVolume, v.Status, v.FleetId, f.Name AS FleetName,
+                   ISNULL(o.ActiveOrders, 0) AS ActiveOrders
+            FROM dbo.Vehicles v
+            JOIN dbo.Fleets f ON f.FleetId = v.FleetId
+            OUTER APPLY (
+                SELECT COUNT(*) AS ActiveOrders
+                FROM dbo.Orders o
+                WHERE o.VehicleId = v.VehicleId AND o.Status IN (N'新建', N'装货中', N'运输中')
+            ) o
+            {where_clause}
+            ORDER BY v.VehicleId DESC
+            """,
+            params,
+        ).fetchall()
+        fleets = conn.execute("SELECT FleetId, Name FROM dbo.Fleets ORDER BY Name").fetchall()
+    return render_template("vehicles.html", vehicles=vehicles, fleets=fleets, selected_fleet_id=selected_fleet_id, edit_vehicle=None)
+
+
+@app.route("/vehicles/depart/<int:vehicle_id>", methods=["POST"])
+def vehicle_depart(vehicle_id: int):
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT Status FROM dbo.Vehicles WHERE VehicleId = ?",
+                (vehicle_id,)
+            ).fetchone()
+            if not row:
+                flash("车辆不存在", "error")
+                return redirect(url_for("vehicles"))
+            if row[0] == "运输中":
+                flash("车辆已在运输中", "error")
+                return redirect(url_for("vehicles"))
+
+            active_orders = conn.execute(
+                """
+                SELECT COUNT(*) FROM dbo.Orders
+                WHERE VehicleId = ? AND Status IN (N'新建', N'装货中', N'运输中')
+                """,
+                (vehicle_id,),
+            ).fetchone()[0]
+            if active_orders == 0:
+                flash("该车辆没有待运单，无法发车", "error")
+                return redirect(url_for("vehicles"))
+
+            conn.execute(
+                "UPDATE dbo.Vehicles SET Status = N'运输中' WHERE VehicleId = ?",
+                (vehicle_id,)
+            )
+            conn.commit()
+            flash("车辆已发车，状态变更为运输中", "success")
+    except pyodbc.Error as e:
+        flash(f"数据库错误：{e}", "error")
+    return redirect(url_for("vehicles"))
+
+
+@app.route("/vehicles/delete/<int:vehicle_id>", methods=["POST"])
+def delete_vehicle(vehicle_id: int):
+    try:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM dbo.Vehicles WHERE VehicleId = ?", (vehicle_id,))
+            conn.commit()
+            flash("车辆已删除", "success")
+    except pyodbc.Error as e:
+        flash(f"删除失败，可能存在关联数据：{e}", "error")
+    return redirect(url_for("vehicles"))
+
+
+@app.route("/vehicles/edit/<int:vehicle_id>", methods=["GET", "POST"])
+def edit_vehicle(vehicle_id: int):
+    if request.method == "POST":
+        plate_no = request.form.get("plate_no")
+        max_weight = request.form.get("max_weight")
+        max_volume = request.form.get("max_volume")
+        fleet_id = request.form.get("fleet_id")
+        import re
+        plate_regex = r"^[A-Z]{1}[A-Z0-9]{5}$"
+        if not all([plate_no, max_weight, max_volume, fleet_id]):
+            flash("必填项不能为空", "error")
+        elif not re.match(plate_regex, plate_no.upper()):
+            flash("车牌格式不合法（示例：A12345）", "error")
+        else:
+            try:
+                with get_conn() as conn:
+                    conn.execute(
+                        """
+                        UPDATE dbo.Vehicles
+                        SET PlateNo = ?, MaxWeight = ?, MaxVolume = ?, FleetId = ?
+                        WHERE VehicleId = ?
+                        """,
+                        (plate_no, float(max_weight), float(max_volume), int(fleet_id), vehicle_id),
+                    )
+                    conn.commit()
+                    flash("车辆信息已更新", "success")
+                    return redirect(url_for("vehicles"))
+            except pyodbc.Error as e:
+                flash(f"数据库错误：{e}", "error")
+            except (TypeError, ValueError):
+                flash("输入格式无效", "error")
+
+    selected_fleet_id = request.args.get("fleet_id")
+    where_clause = ""
+    params = []
+    if selected_fleet_id:
+        try:
+            params.append(int(selected_fleet_id))
+            where_clause = "WHERE v.FleetId = ?"
+        except ValueError:
+            flash("车队筛选参数无效", "error")
+
+    with get_conn() as conn:
+        edit_vehicle = conn.execute(
+            """
+            SELECT v.VehicleId, v.PlateNo, v.MaxWeight, v.MaxVolume, v.Status, v.FleetId, f.Name AS FleetName,
+                   ISNULL(o.ActiveOrders, 0) AS ActiveOrders
+            FROM dbo.Vehicles v
+            JOIN dbo.Fleets f ON f.FleetId = v.FleetId
+            OUTER APPLY (
+                SELECT COUNT(*) AS ActiveOrders
+                FROM dbo.Orders o
+                WHERE o.VehicleId = v.VehicleId AND o.Status IN (N'新建', N'装货中', N'运输中')
+            ) o
+            WHERE v.VehicleId = ?
+            """,
+            (vehicle_id,),
+        ).fetchone()
+        vehicles = conn.execute(
+            f"""
+            SELECT v.VehicleId, v.PlateNo, v.MaxWeight, v.MaxVolume, v.Status, v.FleetId, f.Name AS FleetName,
+                   ISNULL(o.ActiveOrders, 0) AS ActiveOrders
+            FROM dbo.Vehicles v
+            JOIN dbo.Fleets f ON f.FleetId = v.FleetId
+            OUTER APPLY (
+                SELECT COUNT(*) AS ActiveOrders
+                FROM dbo.Orders o
+                WHERE o.VehicleId = v.VehicleId AND o.Status IN (N'新建', N'装货中', N'运输中')
+            ) o
+            {where_clause}
+            ORDER BY v.VehicleId DESC
+            """,
+            params,
+        ).fetchall()
+        fleets = conn.execute("SELECT FleetId, Name FROM dbo.Fleets ORDER BY Name").fetchall()
+    if not edit_vehicle:
+        flash("未找到该车辆", "error")
+        return redirect(url_for("vehicles"))
+    return render_template("vehicles.html", vehicles=vehicles, fleets=fleets, selected_fleet_id=selected_fleet_id, edit_vehicle=edit_vehicle)
+
+
+# Assign order to vehicle
+@app.route("/orders/assign", methods=["GET", "POST"])
+def assign_order():
+    if request.method == "POST":
+        vehicle_id = request.form.get("vehicle_id")
+        driver_id = request.form.get("driver_id")
+        weight = request.form.get("weight")
+        volume = request.form.get("volume")
+        destination = request.form.get("destination")
+        # Require driver selection
+        if not driver_id:
+            flash("必须选择司机", "error")
+            return redirect(url_for("assign_order"))
+        try:
+            driver_id_int = int(driver_id)
+            with get_conn() as conn:
+                # Block assigning when vehicle already departed (运输中)
+                status_row = conn.execute(
+                    "SELECT Status FROM dbo.Vehicles WHERE VehicleId = ?",
+                    (int(vehicle_id),)
+                ).fetchone()
+                if not status_row:
+                    flash("车辆不存在", "error")
+                    return redirect(url_for("assign_order"))
+                if status_row[0] == "运输中":
+                    flash("车辆已发车，无法再添加运单", "error")
+                    return redirect(url_for("assign_order"))
+
+                conn.execute(
+                    "INSERT INTO dbo.Orders(VehicleId, DriverId, Weight, Volume, Destination, Status) VALUES (?, ?, ?, ?, ?, N'新建')",
+                    (int(vehicle_id), driver_id_int, float(weight), float(volume), destination)
+                )
+                conn.commit()
+                flash("运单已分配", "success")
+        except pyodbc.Error as e:
+            msg = str(e)
+            if "51000" in msg or "超出最大载重" in msg:
+                flash("超出最大载重：分配失败", "error")
+            else:
+                flash(f"数据库错误：{e}", "error")
+        except (TypeError, ValueError):
+            flash("司机选择无效", "error")
+        return redirect(url_for("assign_order"))
+
+    with get_conn() as conn:
+        # Only show idle vehicles with remaining capacity > 0
+        vehicles = conn.execute(
+            "SELECT VehicleId, PlateNo, Status, RemainingWeight FROM dbo.vw_fleet_vehicle_load WHERE Status IN (N'空闲', N'装货中') AND RemainingWeight > 0 ORDER BY PlateNo"
+        ).fetchall()
+        drivers = conn.execute("SELECT DriverId, Name FROM dbo.Drivers ORDER BY Name").fetchall()
+    return render_template("assign_order.html", vehicles=vehicles, drivers=drivers)
+
+
+# Sign (complete) an order
+@app.route("/orders/sign", methods=["GET", "POST"])
+def sign_order():
+    if request.method == "POST":
+        order_id = request.form.get("order_id")
+        try:
+            with get_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT Status FROM dbo.Orders WHERE OrderId = ?", (int(order_id),))
+                row = cursor.fetchone()
+                if not row:
+                    flash("未找到该运单", "error")
+                elif row[0] not in ["新建", "装货中", "运输中"]:
+                    flash("仅可签收状态为 新建/装货中/运输中的运单", "error")
+                else:
+                    cursor.execute(
+                        "UPDATE dbo.Orders SET Status = N'已完成' WHERE OrderId = ?",
+                        (int(order_id),)
+                    )
+                    conn.commit()
+                    flash("运单已签收，车辆状态将自动更新", "success")
+        except pyodbc.Error as e:
+            flash(f"数据库错误：{e}", "error")
+        return redirect(url_for("sign_order"))
+
+    with get_conn() as conn:
+        orders = conn.execute(
+            """
+            SELECT o.OrderId, o.Status, o.Weight, o.Volume, o.Destination, o.OrderDate,
+                   v.PlateNo, d.Name AS DriverName
+            FROM dbo.Orders o
+            JOIN dbo.Vehicles v ON v.VehicleId = o.VehicleId
+            LEFT JOIN dbo.Drivers d ON d.DriverId = o.DriverId
+            WHERE o.Status IN (N'新建', N'装货中', N'运输中')
+            ORDER BY o.OrderDate DESC
+            """
+        ).fetchall()
+    return render_template("sign_order.html", orders=orders)
+
+
+# Record exception
+@app.route("/exceptions", methods=["GET", "POST"])
+def exceptions():
+    if request.method == "POST":
+        vehicle_id = request.form.get("vehicle_id")
+        driver_id = request.form.get("driver_id")
+        exception_type = request.form.get("exception_type")
+        phase = request.form.get("phase")
+        fine = request.form.get("fine") or 0
+        try:
+            with get_conn() as conn:
+                conn.execute(
+                    "INSERT INTO dbo.Exceptions(VehicleId, DriverId, ExceptionType, Phase, FineAmount) VALUES (?, ?, ?, ?, ?)",
+                    (int(vehicle_id), int(driver_id) if driver_id else None, exception_type, phase, float(fine))
+                )
+                conn.commit()
+                flash("异常已记录，车辆状态置为异常", "success")
+        except pyodbc.Error as e:
+            flash(f"数据库错误：{e}", "error")
+        return redirect(url_for("exceptions"))
+
+    with get_conn() as conn:
+        vehicles = conn.execute("SELECT VehicleId, PlateNo FROM dbo.Vehicles ORDER BY PlateNo").fetchall()
+        drivers = conn.execute("SELECT DriverId, Name FROM dbo.Drivers ORDER BY Name").fetchall()
+    return render_template("exceptions.html", vehicles=vehicles, drivers=drivers)
+
+
+# Fleet monthly report
+@app.route("/reports/fleet_monthly")
+def fleet_monthly():
+    fleet_id = request.args.get("fleet_id")
+    year = request.args.get("year")
+    month = request.args.get("month")
+    result = None
+    if fleet_id and year and month:
+        with get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("EXEC dbo.sp_fleet_monthly_report @FleetId=?, @Year=?, @Month=?", (int(fleet_id), int(year), int(month)))
+            result = cursor.fetchone()
+    with get_conn() as conn:
+        fleets = conn.execute("SELECT FleetId, Name FROM dbo.Fleets ORDER BY Name").fetchall()
+    return render_template("report.html", fleets=fleets, result=result)
+
+
+# Weekly exception view
+@app.route("/views/week_exceptions")
+def week_exceptions():
+    with get_conn() as conn:
+        rows = conn.execute("SELECT TOP 100 * FROM dbo.vw_week_exception_alerts ORDER BY OccurTime DESC").fetchall()
+    return render_template("week_exceptions.html", rows=rows)
+
+
+# Exception processing (mark as processed)
+@app.route("/exceptions/process", methods=["GET", "POST"])
+def process_exceptions():
+    if request.method == "POST":
+        exception_id = request.form.get("exception_id")
+        try:
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE dbo.Exceptions SET Processed = 1, ProcessedTime = SYSDATETIME() WHERE ExceptionId = ?",
+                    (int(exception_id),)
+                )
+                conn.commit()
+                flash("异常已处理，车辆状态将自动恢复", "success")
+        except pyodbc.Error as e:
+            flash(f"数据库错误：{e}", "error")
+        return redirect(url_for("process_exceptions"))
+
+    # GET: fetch unprocessed exceptions
+    with get_conn() as conn:
+        exceptions = conn.execute(
+            """SELECT e.ExceptionId, e.OccurTime, e.ExceptionType, e.Phase, e.FineAmount,
+                      v.PlateNo, v.Status AS VehicleStatus,
+                      d.Name AS DriverName
+               FROM dbo.Exceptions e
+               JOIN dbo.Vehicles v ON v.VehicleId = e.VehicleId
+               LEFT JOIN dbo.Drivers d ON d.DriverId = e.DriverId
+               WHERE e.Processed = 0
+               ORDER BY e.OccurTime DESC"""
+        ).fetchall()
+    return render_template("process_exceptions.html", exceptions=exceptions)
+
+
+if __name__ == "__main__":
+    # Allow changing port via environment variable to avoid conflicts
+    port = int(os.getenv("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port, debug=True)
