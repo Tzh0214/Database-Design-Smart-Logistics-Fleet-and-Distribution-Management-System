@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3>运单分配</h3>
+<form method="post">
+  车辆: <select name="vehicle_id" required>
+    {% for v in vehicles %}
+      <option value="{{ v.VehicleId }}">{{ v.PlateNo }}（剩余载重: {{ v.RemainingWeight }}）</option>
+    {% endfor %}
+  </select>
+  司机(可选): <select name="driver_id">
+    <option value="">(未指定)</option>
+    {% for d in drivers %}
+      <option value="{{ d.DriverId }}">{{ d.Name }}</option>
+    {% endfor %}
+  </select>
+  重量(kg): <input name="weight" type="number" step="0.01" required>
+  体积(m³): <input name="volume" type="number" step="0.01" required>
+  目的地: <input name="destination" required>
+  <button type="submit">分配</button>
+</form>
+<p>当触发器检验超载将弹出错误提示。</p>
+{% endblock %}

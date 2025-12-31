@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>司机绩效追踪</h2>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" action="{{ url_for('driver_performance') }}" class="row g-3">
+            {% if session.get('role') == 'Manager' %}
+            <div class="col-md-4">
+                <label for="driver_id" class="form-label">选择司机</label>
+                <select class="form-select" id="driver_id" name="driver_id">
+                    {% for d in drivers %}
+                    <option value="{{ d.DriverId }}" {% if selected_driver_id == d.DriverId %}selected{% endif %}>
+                        {{ d.Name }} ({{ d.EmployeeNo }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="col-md-3">
+                <label for="start_date" class="form-label">开始日期</label>
+                <input type="date" class="form-control" id="start_date" name="start_date" value="{{ start_date }}" required>
+            </div>
+            <div class="col-md-3">
+                <label for="end_date" class="form-label">结束日期</label>
+                <input type="date" class="form-control" id="end_date" name="end_date" value="{{ end_date }}" required>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">查询</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if stats %}
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-white bg-primary mb-3">
+            <div class="card-header">总运单数</div>
+            <div class="card-body">
+                <h5 class="card-title">{{ stats.TotalOrders }}</h5>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-success mb-3">
+            <div class="card-header">已完成运单</div>
+            <div class="card-body">
+                <h5 class="card-title">{{ stats.CompletedOrders }}</h5>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-info mb-3">
+            <div class="card-header">总运输重量</div>
+            <div class="card-body">
+                <h5 class="card-title">{{ stats.TotalWeight }} 吨</h5>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-warning mb-3">
+            <div class="card-header">总运输体积</div>
+            <div class="card-body">
+                <h5 class="card-title">{{ stats.TotalVolume }} m³</h5>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h3>异常记录详情</h3>
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>时间</th>
+            <th>类型</th>
+            <th>阶段</th>
+            <th>罚款金额</th>
+            <th>处理状态</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for ex in exceptions %}
+        <tr>
+            <td>{{ ex.OccurTime }}</td>
+            <td>{{ ex.ExceptionType }}</td>
+            <td>{{ ex.Phase }}</td>
+            <td>{{ ex.FineAmount }}</td>
+            <td>
+                {% if ex.Processed %}
+                <span class="badge bg-success">已处理</span>
+                {% else %}
+                <span class="badge bg-danger">未处理</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="5" class="text-center">无异常记录</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% endblock %}

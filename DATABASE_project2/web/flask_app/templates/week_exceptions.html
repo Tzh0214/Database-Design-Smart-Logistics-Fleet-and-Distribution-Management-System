@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3>本周异常警报视图</h3>
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr>
+    <th>时间</th><th>类型</th><th>阶段</th><th>罚款</th>
+    <th>车辆</th><th>车队</th><th>司机</th>
+  </tr>
+  {% for r in rows %}
+    <tr>
+      <td>{{ r.OccurTime }}</td>
+      <td>{{ r.ExceptionType }}</td>
+      <td>{{ r.Phase }}</td>
+      <td>{{ r.FineAmount }}</td>
+      <td>{{ r.PlateNo }}（{{ r.VehicleStatus }}）</td>
+      <td>{{ r.FleetName }}</td>
+      <td>{{ r.DriverName }}</td>
+    </tr>
+  {% endfor %}
+</table>
+{% endblock %}
